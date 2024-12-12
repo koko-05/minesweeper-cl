@@ -1,2 +1,2 @@
 build: main.c
-	cc main.c -g3 -o minesweeper-cli
+	cc main.c -g3 -lncursesw -o minesweeper-cli
