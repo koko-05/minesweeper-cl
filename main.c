@@ -106,9 +106,9 @@ void draw_sprite(int32_t ix, int32_t iy, const char *texture)
     {
         for (float x = 0; floor(x) < TEXTURE_SIZE_X; x += ZOOM)
         {
-            if (iy + y/ZOOM > C_SIZE_Y - 1 || ix + x / ZOOM > C_SIZE_X - 1 ||
+            if (iy + floor(y/ZOOM) > C_SIZE_Y - 1 || ix + floor(x / ZOOM) > C_SIZE_X - 1 ||
                 iy + y/ZOOM < 0            || ix + x / ZOOM < 0 ) { continue; }
-            move(iy + floor(y / ZOOM), ix + floor(x / ZOOM));
+            move(iy + roundf(y / ZOOM), ix + roundf(x / ZOOM)); // im not sure why, but rounding here fixes things
             addch(texture[(int)floor(y)*TEXTURE_SIZE_X + (int)floor(x)]);
         }
     }
@@ -121,19 +121,22 @@ void draw_cell(uint32_t i)
     static int32_t x = 0;
     static int32_t y = 0;
 
+    const int32_t rts_x = floorf(TEXTURE_SIZE_X / ZOOM);
+    const int32_t rts_y = floorf(TEXTURE_SIZE_Y / ZOOM);
+
     if (GRID[i] & (0x1 << 7)) 
     { 
         draw_sprite(
-            x * TEXTURE_SIZE_X / ZOOM + C_SIZE_X / 2 - (int)roundf(CAM_X) - COLUMNS * (TEXTURE_SIZE_X / ZOOM) / 2, 
-            y * TEXTURE_SIZE_Y / ZOOM + C_SIZE_Y / 2 + (int)roundf(CAM_Y) - ROWS    * (TEXTURE_SIZE_Y / ZOOM) / 2, 
+            x * rts_x + C_SIZE_X / 2 - (int)roundf(CAM_X) - COLUMNS * rts_x / 2, 
+            y * rts_y + C_SIZE_Y / 2 + (int)roundf(CAM_Y) - ROWS    * rts_y / 2, 
             SPRITE_BOMB 
         );
     } 
     else 
     {
         draw_sprite(
-            x * TEXTURE_SIZE_X / ZOOM + C_SIZE_X / 2 - (int)roundf(CAM_X) - COLUMNS * (TEXTURE_SIZE_X / ZOOM) / 2, 
-            y * TEXTURE_SIZE_Y / ZOOM + C_SIZE_Y / 2 + (int)roundf(CAM_Y) - ROWS    * (TEXTURE_SIZE_Y / ZOOM) / 2, 
+            x * rts_x + C_SIZE_X / 2 - (int)roundf(CAM_X) - COLUMNS * rts_x / 2, 
+            y * rts_y + C_SIZE_Y / 2 + (int)roundf(CAM_Y) - ROWS    * rts_y / 2, 
             SPRITE_NUMBERS[GRID[i]]
         );
     }
@@ -185,12 +188,13 @@ int main()
         refresh();
 
         int kinput = getch();
-        if ( kinput == 'x') { ZOOM += 0.06f; }
-        if ( kinput == 'c') { ZOOM = ZOOM - 0.06f <= 0.1f ? 0.06f : ZOOM - 0.06f; }
-        if ( kinput == 'l') { CAM_X += 0.5f / ZOOM; }
-        if ( kinput == 'h') { CAM_X -= 0.5f / ZOOM; }
-        if ( kinput == 'j') { CAM_Y -= 0.5f / ZOOM; }
-        if ( kinput == 'k') { CAM_Y += 0.5f / ZOOM; }
+        if ( kinput == 'x') { ZOOM += 0.05f; }
+        if ( kinput == 'c') { ZOOM = ZOOM - 0.05f <= 0.1f ? 0.1f : ZOOM - 0.05f; }
+        if ( kinput == 'l') { CAM_X += 1.5f / ZOOM; }
+        if ( kinput == 'h') { CAM_X -= 1.5f / ZOOM; }
+        if ( kinput == 'j') { CAM_Y -= 1.5f / ZOOM; }
+        if ( kinput == 'k') { CAM_Y += 1.5f / ZOOM; }
+        if ( kinput == '0') { CAM_Y = 0.0f; CAM_X = 0.0f; ZOOM = 1.0f; }
         if ( kinput == 'q') { break; }
     }
 
