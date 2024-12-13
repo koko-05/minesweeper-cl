@@ -6,6 +6,9 @@
 #include <string.h>
 #include <ncurses.h>
 #include <unistd.h>
+#include <math.h>
+
+#include "sprites.h"
 
 /*
  * (most significant first)
@@ -59,7 +62,7 @@ void mscl_start( uint32_t rows, uint32_t columns, float density )
 
 bool mscl_loop()
 {
-    return false;
+    return true;
 }
 
 void mscl_cleanup()
@@ -81,69 +84,13 @@ void mscl_debug_render_grid()
 static int C_SIZE_X;
 static int C_SIZE_Y;
 
+static float ZOOM, CAM_X, CAM_Y;
+
 //(7x4)
 #define TEXTURE_SIZE_X 7
 #define TEXTURE_SIZE_Y 4
-static const char *SPRITE_BOMB = "\
- _____ \
-| ### |\
-| ### |\
-|_____|";
-static const char *SPRITE_UNDESCOVERD = "\
- _____ \
-|/////|\
-|/////|\
-|_____|";
-static const char *SPRITE_NUMBERS[9] = 
-{
-"\
- _____ \
-|     |\
-|     |\
-|_____|",
-"\
- _____ \
-| /|  |\
-| _|_ |\
-l_____|",
-"\
- --_ - \
-| __| |\
-| |__ |\
-l_____|",
-"\
- -__-- \
-|  _| |\
-| __/ |\
-l_____|",
-"\
- _____ \
-| |_| |\
-|   | |\
-l_____|",
-"\
- --__- \
-| |   |\
-| _\\  |\
-l_____|",
-"\
- __--_ \
-| |__ |\
-| \\__/|\
-l_____|",
-"\
- --__- \
-|  _/ |\
-|  /  |\
-l_____|",
-"\
- --_-- \
-| |_| |\
-| |_| |\
-l-----|"
-};
 
-void draw_sprite(uint32_t ix, uint32_t iy, const char *texture)
+void draw_sprite(int32_t ix, int32_t iy, const char *texture)
 {
     if (texture == SPRITE_BOMB)       { attron(A_BOLD                ); }
     if (texture == SPRITE_NUMBERS[1]) { attron(A_BOLD | COLOR_PAIR(1)); }
@@ -155,12 +102,14 @@ void draw_sprite(uint32_t ix, uint32_t iy, const char *texture)
     if (texture == SPRITE_NUMBERS[7]) { attron(A_BOLD | COLOR_PAIR(7)); }
     if (texture == SPRITE_NUMBERS[8]) { attron(A_BOLD | COLOR_PAIR(8)); }
 
-    for (uint32_t y = 0; y < TEXTURE_SIZE_Y; y++)
+    for (float y = 0; floor(y) < TEXTURE_SIZE_Y; y += ZOOM)
     {
-        for (uint32_t x = 0; x < TEXTURE_SIZE_X; x++)
+        for (float x = 0; floor(x) < TEXTURE_SIZE_X; x += ZOOM)
         {
-            move(iy+y, ix+x);
-            addch(texture[y*TEXTURE_SIZE_X + x]);
+            if (iy + y/ZOOM > C_SIZE_Y - 1 || ix + x / ZOOM > C_SIZE_X - 1 ||
+                iy + y/ZOOM < 0            || ix + x / ZOOM < 0 ) { continue; }
+            move(iy + floor(y / ZOOM), ix + floor(x / ZOOM));
+            addch(texture[(int)floor(y)*TEXTURE_SIZE_X + (int)floor(x)]);
         }
     }
 
@@ -169,16 +118,24 @@ void draw_sprite(uint32_t ix, uint32_t iy, const char *texture)
 
 void draw_cell(uint32_t i)
 {
-    static uint32_t x = 0;
-    static uint32_t y = 0;
+    static int32_t x = 0;
+    static int32_t y = 0;
 
     if (GRID[i] & (0x1 << 7)) 
     { 
-        draw_sprite(x * TEXTURE_SIZE_X, y * TEXTURE_SIZE_Y, SPRITE_BOMB );
+        draw_sprite(
+            x * TEXTURE_SIZE_X / ZOOM + C_SIZE_X / 2 - (int)roundf(CAM_X) - COLUMNS * (TEXTURE_SIZE_X / ZOOM) / 2, 
+            y * TEXTURE_SIZE_Y / ZOOM + C_SIZE_Y / 2 + (int)roundf(CAM_Y) - ROWS    * (TEXTURE_SIZE_Y / ZOOM) / 2, 
+            SPRITE_BOMB 
+        );
     } 
     else 
     {
-        draw_sprite(x * TEXTURE_SIZE_X, y * TEXTURE_SIZE_Y, SPRITE_NUMBERS[GRID[i]] ); 
+        draw_sprite(
+            x * TEXTURE_SIZE_X / ZOOM + C_SIZE_X / 2 - (int)roundf(CAM_X) - COLUMNS * (TEXTURE_SIZE_X / ZOOM) / 2, 
+            y * TEXTURE_SIZE_Y / ZOOM + C_SIZE_Y / 2 + (int)roundf(CAM_Y) - ROWS    * (TEXTURE_SIZE_Y / ZOOM) / 2, 
+            SPRITE_NUMBERS[GRID[i]]
+        );
     }
 
     x++;
@@ -203,27 +160,38 @@ int main()
     start_color(); keypad(stdscr, TRUE);
     getmaxyx(stdscr, C_SIZE_Y, C_SIZE_X);
 
+    /* Color pairs */
     init_pair(1, COLOR_CYAN,    COLOR_BLACK);
     init_pair(2, COLOR_GREEN,   COLOR_BLACK);
     init_pair(3, COLOR_YELLOW,  COLOR_BLACK);
     init_pair(4, COLOR_RED,     COLOR_BLACK);
     init_pair(5, COLOR_MAGENTA, COLOR_BLACK);
     init_pair(6, COLOR_BLUE,    COLOR_BLACK);
-    init_pair(7, COLOR_WHITE,   COLOR_BLACK);
+    init_pair(7, COLOR_MAGENTA, COLOR_BLACK);
     init_pair(8, COLOR_RED,     COLOR_BLACK);
 
-    clear();
-
-    for (int i = 0; i < ROWS * COLUMNS; i++)
-    {
-        draw_cell(i);
-    }
-
-    refresh();
-    sleep(1000);
+    ZOOM  = 1.0f; CAM_X = 0.0f; CAM_Y = 0.0f;
 
     while ( mscl_loop() )
     {
+        /* render */
+        clear();
+        for (int i = 0; i < ROWS * COLUMNS; i++)
+        {
+            draw_cell(i);
+        }
+        border(0,0,0,0,0,0,0,0);
+        mvprintw(0,0, "z: %+.1f p: (%+.1f, %+.1f)", ZOOM, CAM_X, CAM_Y);
+        refresh();
+
+        int kinput = getch();
+        if ( kinput == 'x') { ZOOM += 0.06f; }
+        if ( kinput == 'c') { ZOOM = ZOOM - 0.06f <= 0.1f ? 0.06f : ZOOM - 0.06f; }
+        if ( kinput == 'l') { CAM_X += 0.5f / ZOOM; }
+        if ( kinput == 'h') { CAM_X -= 0.5f / ZOOM; }
+        if ( kinput == 'j') { CAM_Y -= 0.5f / ZOOM; }
+        if ( kinput == 'k') { CAM_Y += 0.5f / ZOOM; }
+        if ( kinput == 'q') { break; }
     }
 
     mscl_cleanup();
